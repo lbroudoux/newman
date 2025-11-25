@@ -8,12 +8,18 @@ const _ = require('lodash'),
     program = new Command(),
     version = require('../package.json').version,
     newman = require('../'),
-    util = require('./util');
+    util = require('./util'),
+    sandbox = require('./sandbox'),
+    test = require('./test');
 
 program
     .name('newman')
     .addHelpCommand(false)
     .version(version, '-v, --version');
+
+// Add sandbox & test commands.
+program.addCommand(sandbox.command);
+program.addCommand(test.command);
 
 // The `run` command allows you to specify a collection to be run with the provided options.
 program

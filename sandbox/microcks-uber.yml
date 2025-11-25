@@ -1,0 +1,46 @@
+version: '2'
+
+services:
+  postman:
+    image: quay.io/microcks/microcks-postman-runtime:0.7.0
+    container_name: microcks-postman-runtime
+
+  kafka:
+    image: redpandadata/redpanda:v24.3.1
+    container_name: microcks-kafka
+    command: [
+      "redpanda", "start",
+      "--overprovisioned --smp 1 --memory 1G --reserve-memory 0M --node-id 0 --check=false",
+      "--kafka-addr PLAINTEXT://0.0.0.0:19092,EXTERNAL://0.0.0.0:9092",
+      "--advertise-kafka-addr PLAINTEXT://kafka:19092,EXTERNAL://localhost:9092"
+    ]
+    ports:
+      - "9092:9092"
+      - "19092:19092"
+
+  app:
+    depends_on:
+      - postman
+    image: quay.io/microcks/microcks-uber:nightly-native
+    container_name: microcks
+    ports:
+      - "8585:8080"
+      - "8686:9090"
+    environment:
+      - POSTMAN_RUNNER_URL=http://postman:3000
+      - TEST_CALLBACK_URL=http://microcks:8080
+      - ASYNC_MINION_URL=http://microcks-async-minion:8081
+
+  async-minion:
+    depends_on:
+      - app
+    ports:
+      - "8081:8081"
+    image: quay.io/microcks/microcks-uber-async-minion:nightly-native
+    container_name: microcks-async-minion
+    restart: on-failure
+    environment:
+      - QUARKUS_PROFILE=docker-compose
+      - MICROCKS_HOST_PORT=microcks:8080
+      - ASYNC_PROTOCOLS=,KAFKA
+      - KAFKA_BOOTSTRAP_SERVER=kafka:19092
