@@ -22,7 +22,7 @@ const test = program.command('test')
       timeout: parseInt(options.timeout)
     }
     // Launch test request on sandbox.
-    const response = await fetch("http://localhost:8585/api/tests", {
+    const response = await fetch("http://localhost:9090/api/tests", {
       method: 'POST',
       body: JSON.stringify(testRequest),
       headers: {
@@ -41,7 +41,7 @@ const test = program.command('test')
         testResult = await refreshTestResult(testResultId);
       }
 
-      console.log('ℹ️  Test execution completed. Results available at: http://localhost:8585/#/tests/' + testResultId);
+      console.log('ℹ️  Test execution completed. Results available at: http://localhost:9090/#/tests/' + testResultId);
 
       if (!testResult.inProgress) {
         if (testResult.success) {
@@ -50,12 +50,17 @@ const test = program.command('test')
           console.log('❌ Some tests failed.');
         }
       }
-      testResult.testCaseResults.forEach(suite => {
+      testResult.testCaseResults.forEach(async suite => {
         console.log(`\nTest Suite: '${suite.operationName}'`);
+
         suite.testStepResults.forEach(testCase => {
           const statusIcon = testCase.success ? '✅' : '❌';
           console.log(`  ${statusIcon} Test Case: '${testCase.requestName}'`);
-        }); 
+          if (!testCase.success) {
+            console.log('       Errors: ' + testResult.testCaseResults.find(tr => tr.operationName === suite.operationName)
+            .testStepResults.find(ts => ts.requestName === testCase.requestName).message);
+          }
+        });   
       });
     } else {
       console.error('🚨 Error while launching tests on sandbox, code: ' + response.status);
@@ -63,13 +68,31 @@ const test = program.command('test')
   });   
 
 function refreshTestResult(testResultId) {
-  return fetch("http://localhost:8585/api/tests/" + testResultId)
+  return fetch("http://localhost:9090/api/tests/" + testResultId)
       .then(response => {
         if (!response.ok) {
           throw new Error('Error while fetching TestResult on Microcks, code: ' + response.status);
         }
         return response.json();
       })
+}
+
+function getFailureMessages(testResult, operationName) {
+  // Build the test case identfier.
+  const operation = encode(operationName)
+  const testCaseId = `${testResult.id}-${testResult.testNumber}-${operation}`;
+  return fetch("http://localhost:9090/api/tests/" + testResult.id + "/messages/" + testCaseId)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Error while fetching TestResult message on Microcks, code: ' + response.status);
+        }
+        return response.json();
+      })
+}
+
+function encode(operation) {
+  operation = operation.replace(/\//g, '!');
+  return encodeURIComponent(operation);
 }
 
 module.exports = {

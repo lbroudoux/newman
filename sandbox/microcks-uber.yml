@@ -24,8 +24,8 @@ services:
     image: quay.io/microcks/microcks-uber:nightly-native
     container_name: microcks
     ports:
-      - "8585:8080"
-      - "8686:9090"
+      - "9090:8080"
+      - "9091:9090"
     environment:
       - POSTMAN_RUNNER_URL=http://postman:3000
       - TEST_CALLBACK_URL=http://microcks:8080

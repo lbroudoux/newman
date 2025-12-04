@@ -4,14 +4,13 @@ const { readFile } = require('fs/promises');
 const path = require("path");
 const { Readable } = require('stream');
 const { finished } = require('stream/promises');
-const zlib = require("node:zlib");
-const { pipeline } = require("node:stream");
+const unzipper = require("unzipper");
 const { exec } = require('child_process');
 var Spinner = require('cli-spinner').Spinner;
 
 const commander = require('commander');
 
-const BUNDER_SERVER = 'http://localhost:5173';
+const BUNDLE_SERVER = 'http://localhost:5173';
 
 const program = new commander.Command();
 
@@ -46,8 +45,8 @@ sandbox.command('run <bundle>')
     // Load bundle in sandbox.
     await loadingBundleInSandbox(bundle, options.perf || false);
     
-    console.log('✅ Sandbox is up and running on http://localhost:8585');
-    console.log('   gRPC mocks are runnning on localhost:8686');
+    console.log('✅ Sandbox is up and running on http://localhost:9090');
+    console.log('   gRPC mocks are runnning on localhost:9091');
     console.log('   Kafka broker is running on localhost:9092');
   });  
 
@@ -56,10 +55,10 @@ sandbox.command('status')
   .description('Get the status of the sandbox environment')
   .action(async () => {
     try {
-      const res = await fetch('http://localhost:8585/api/keycloak/config');
+      const res = await fetch('http://localhost:9090/api/keycloak/config');
       if (res.ok) {
-        console.log('✅ Sandbox is running on http://localhost:8585');
-        console.log('   gRPC mocks are runnning on localhost:8686');
+        console.log('✅ Sandbox is running on http://localhost:9090');
+        console.log('   gRPC mocks are runnning on localhost:9091');
         console.log('   Kafka broker is running on localhost:9092');
       } else {
         console.log('❌ Sandbox is not running.');
@@ -100,7 +99,7 @@ async function downloadBundleFile(bundle, perf) {
   }
 
   // Download the bundle file.
-  const res = await fetch(`${BUNDER_SERVER}/api/bundles/${bundle}`);
+  const res = await fetch(`${BUNDLE_SERVER}/api/bundles/${bundle}`);
   const destination = path.resolve(downloadsPath, bundle + '.zip');
   const fileStream = fs.createWriteStream(destination, { flags: 'wx' });
   await finished(Readable.fromWeb(res.body).pipe(fileStream));
@@ -114,12 +113,11 @@ async function downloadBundleFile(bundle, perf) {
 /** */
 async function extractBundleFile(bundlePath, perf) {
   let start = Date.now();
-  console.log('📂 Extracting bundle to ' + bundlePath + '...');
   const bundleDir = `${os.homedir()}/.microcks-sandbox/bundle`;
-  fs.mkdirSync(bundleDir, { recursive: true });
-
+  console.log('📂 Extracting bundle to ' + bundleDir + '...');
+  
   // Prepare bundle directory.
-  if (!fs.existsSync(bundleDir  )) {
+  if (!fs.existsSync(bundleDir)) {
     try {
       fs.mkdirSync(bundleDir, { recursive: true });
     } catch (err) {
@@ -128,11 +126,12 @@ async function extractBundleFile(bundlePath, perf) {
     }
   }
 
-  const unzip = zlib.createUnzip();
-  const input = fs.createReadStream(bundlePath);
-  const output = fs.createWriteStream(bundleDir);
-
-  pipeline(input, unzip, output, (error) => {});
+  // Unzip bundle file.
+  fs.createReadStream(bundlePath)
+    .pipe(unzipper.Extract({ path: bundleDir }))
+    .on('close', () => {
+      // Extraction completed.
+    });
 
   let end = Date.now();
   if (perf) {
@@ -145,7 +144,8 @@ async function startSandboxEnvironment(bundlePath, perf) {
   let start = Date.now();
   console.log('🚀 Starting sandbox with local ' + bundlePath + '...');
 
-  exec('docker compose -f ./sandbox/microcks-uber.yml up -d', (err, stdout, stderr) => {
+  let composeFile = path.resolve(__dirname, '../sandbox/microcks-uber.yml');
+  exec(`docker compose -f ${composeFile} up -d`, (err, stdout, stderr) => {
     if (err) {
       console.error(`🚨 Error executing command: ${err}`);
       process.exit(1);
@@ -162,7 +162,7 @@ async function startSandboxEnvironment(bundlePath, perf) {
   var attempt = 0;
   while (!alive) {
     try {
-      const res = await fetch('http://localhost:8585/api/keycloak/config');
+      const res = await fetch('http://localhost:9090/api/keycloak/config');
       if (res.ok) {
         alive = true;
       } else {
@@ -172,7 +172,7 @@ async function startSandboxEnvironment(bundlePath, perf) {
       await new Promise(resolve => setTimeout(resolve, 500));
     }
     attempt++;
-    if (attempt >= 10) {
+    if (attempt >= 20) {
       console.error('🚨 Sandbox did not start in expected time. Exiting.');
       process.exit(1);
     }
@@ -183,6 +183,8 @@ async function startSandboxEnvironment(bundlePath, perf) {
   let end = Date.now();
   if (perf) {
     console.log(`\n   ⏱️  ${end - start}ms.\n`);
+  } else {
+    console.log('\n');
   }
 }
 
@@ -190,7 +192,8 @@ async function startSandboxEnvironment(bundlePath, perf) {
 async function stopSandboxEnvironment() {
   console.log('✋ Stopping running sandbox...');
   
-  exec('docker compose -f ./sandbox/microcks-uber.yml down', (err, stdout, stderr) => {
+  let composeFile = path.resolve(__dirname, '../sandbox/microcks-uber.yml');
+  exec(`docker compose -f ${composeFile} down`, (err, stdout, stderr) => {
     if (err) {
       console.error(`🚨 Error executing command: ${err}`);
       process.exit(1);
@@ -260,7 +263,7 @@ async function loadArtifact(artifactPath, primary) {
     'Content-Length': multipartBody.length.toString(),
   }
 
-  const response = await fetch(`http://localhost:8585/api/artifact/upload?mainArtifact=${primary}`, {
+  const response = await fetch(`http://localhost:9090/api/artifact/upload?mainArtifact=${primary}`, {
     method: 'POST',
     headers: headers,
     body: multipartBody
