@@ -57,7 +57,7 @@ const test = program.command('test')
           const statusIcon = testCase.success ? '✅' : '❌';
           console.log(`  ${statusIcon} Test Case: '${testCase.requestName}'`);
           if (!testCase.success) {
-            console.log('       Errors: ' + testResult.testCaseResults.find(tr => tr.operationName === suite.operationName)
+            console.log('      - Errors: ' + testResult.testCaseResults.find(tr => tr.operationName === suite.operationName)
             .testStepResults.find(ts => ts.requestName === testCase.requestName).message);
           }
         });   
